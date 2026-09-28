@@ -1,0 +1,1 @@
+Private OS app-data directory; override with PI_GOOGLE_CALENDAR_DATA_DIR; directories 0700 and files 0600

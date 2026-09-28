@@ -1,0 +1,1 @@
+OS application-data directory: macOS ~/Library/Application Support/pi-google-calendar/accounts.json; Linux ${XDG_DATA_HOME:-~/.local/share}/pi-google-calendar/accounts.json; Windows %LOCALAPPDATA%/pi-google-calendar/accounts.json; override PI_GOOGLE_CALENDAR_DATA_DIR

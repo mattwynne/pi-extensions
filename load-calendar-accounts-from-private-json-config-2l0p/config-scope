@@ -1,0 +1,1 @@
+Global install uses <agent-dir>/google-calendar.json; project install uses <project>/.pi/google-calendar.json; do not merge scopes implicitly
