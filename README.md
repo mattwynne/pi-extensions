@@ -1,5 +1,7 @@
 # Pi extensions
 
+[![Release check](https://github.com/mattwynne/pi-extensions/actions/workflows/release-check.yml/badge.svg)](https://github.com/mattwynne/pi-extensions/actions/workflows/release-check.yml)
+
 Version-controlled global extensions for [Pi](https://github.com/earendil-works/pi).
 
 ## Installation
