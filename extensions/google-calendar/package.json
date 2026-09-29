@@ -1,0 +1,16 @@
+{
+  "name": "google-calendar",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Pi extension providing Google Calendar tools for multiple accounts",
+  "main": "index.ts",
+  "type": "module",
+  "license": "MIT",
+  "scripts": {
+    "prepublishOnly": "node -e \"throw new Error('This package is not published to npm')\""
+  },
+  "dependencies": {
+    "googleapis": "^171.4.0",
+    "typebox": "^1.3.34"
+  }
+}

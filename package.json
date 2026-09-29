@@ -1,0 +1,19 @@
+{
+  "name": "pi-extensions",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Extensions for the Pi coding agent",
+  "license": "MIT",
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "prepublishOnly": "node -e \"throw new Error('This package is not published to npm')\"",
+    "pretest": "npm ci --prefix extensions/google-calendar --ignore-scripts --no-audit",
+    "test": "node --test",
+    "check:extensions": "node scripts/check-extension-syntax.mjs",
+    "check:calendar": "npm audit --prefix extensions/google-calendar --audit-level=high",
+    "check": "npm test && npm run check:extensions && npm run check:calendar"
+  }
+}

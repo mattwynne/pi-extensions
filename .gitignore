@@ -1,0 +1,31 @@
+node_modules/
+
+# Local environment and credential files
+.env
+.env.*
+!.env.example
+!.env.*.example
+oauth-client.json
+client_secret*.json
+!client_secret*.example.json
+auth-url.txt
+
+# Authentication state
+tokens/
+.tokens/
+
+# Debug output and private keys
+debug.log*
+*-debug.log
+*-debug.log.*
+*.pem
+*.key
+*.p12
+*.pfx
+id_rsa
+id_ed25519
+
+# Repository-local generated state
+.local/
+.worktrees/
+.yaks/
