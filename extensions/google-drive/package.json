@@ -1,0 +1,12 @@
+{
+  "name": "google-drive",
+  "version": "1.0.0",
+  "description": "Pi extension providing Google Drive, Docs, Sheets, and Slides tools for multiple accounts",
+  "main": "index.ts",
+  "type": "module",
+  "license": "ISC",
+  "dependencies": {
+    "googleapis": "^171.4.0",
+    "typebox": "^1.3.34"
+  }
+}

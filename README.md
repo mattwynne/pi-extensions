@@ -31,10 +31,12 @@ ln -s "$PI_EXTENSIONS_DIR/extensions/session-title" \
 ln -s "$PI_EXTENSIONS_DIR/extensions/question.ts" \
   "$PI_GLOBAL_EXTENSIONS_DIR/question.ts"
 
-# google-calendar needs its own npm deps installed in the real directory:
-(cd "$PI_EXTENSIONS_DIR/extensions/google-calendar" && npm install)
-ln -s "$PI_EXTENSIONS_DIR/extensions/google-calendar" \
-  "$PI_GLOBAL_EXTENSIONS_DIR/google-calendar"
+# google-calendar and google-drive need their own npm deps installed in the real directory:
+for ext in google-calendar google-drive; do
+  (cd "$PI_EXTENSIONS_DIR/extensions/$ext" && npm install)
+  ln -s "$PI_EXTENSIONS_DIR/extensions/$ext" \
+    "$PI_GLOBAL_EXTENSIONS_DIR/$ext"
+done
 ```
 
 These examples use POSIX symbolic links. Keep the checkout in place while the
