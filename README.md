@@ -43,6 +43,14 @@ These examples use POSIX symbolic links. Keep the checkout in place while the
 links are installed. Run `/reload` in Pi after installing or changing an
 extension.
 
+The `fastmail-contact-groups` extension is intended for project-scoped use
+because it accesses a personal address book. Add
+`extensions/fastmail-contact-groups` from this checkout to the project's
+`.pi/settings.json` instead of linking it globally. It registers the guarded
+`fastmail_contact_groups` CardDAV tool; basic contact operations remain with
+Fastmail's official MCP tools. See its [README](extensions/fastmail-contact-groups/README.md)
+for credentials and safety constraints.
+
 Automatic session naming uses the session's selected model and credentials, so
 each naming request can incur provider cost and sends session material to that
 provider. Every request sends at most the most recent 6,000 characters: the
@@ -92,9 +100,10 @@ Expected provider IDs: `openai-codex`, `openrouter`, `pi-claude-code-provider`.
 
 ## Tests
 
-Requires Node.js 24 or newer. The release check installs the Calendar package
-from its lockfile, runs every test, validates each extension source file, and
-audits the Calendar dependencies:
+Requires Node.js 24 or newer and Python 3. The release check installs the
+Calendar package from its lockfile, runs every Node and Fastmail contact-group
+Python test, validates each extension source file, and audits the Calendar
+dependencies:
 
 ```sh
 npm run check
