@@ -16,9 +16,13 @@ Load this directory as a Pi extension. For project-only use, add its checkout pa
 }
 ```
 
-Run `/reload` after changing the extension or settings. Do not also install a global symlink for the same project; duplicate loading could register the tool twice.
+Install its locked runtime dependencies in the extension's real directory:
 
-The TypeScript extension has no separately installed npm dependencies. Pi supplies its extension API and schema helpers.
+```bash
+npm install --prefix extensions/fastmail-contact-groups
+```
+
+Run `/reload` after changing the extension or settings. Do not also install a global symlink for the same project; duplicate loading could register the tool twice. Pi supplies its extension API and schema helpers.
 
 ## Authentication
 
@@ -39,29 +43,20 @@ Registration does not read credentials or contact data and does not open a netwo
 - A write starts from a fresh group read, requires a strong ETag, sends `If-Match`, and never retries automatically.
 - Read-back verifies the requested membership and preservation of unrelated members and properties.
 - Conflicts and uncertain writes require a fresh inspection before another attempt.
-- The helper follows no redirects and sanitizes network, server, and subprocess errors.
+- The service follows no redirects and sanitizes network, server, and internal errors.
 
 A verified group membership change does not prove any downstream mail-routing behavior.
 
-## Direct helper use
+## Implementation
 
-The Python helper uses only the standard library:
-
-```bash
-python3 extensions/fastmail-contact-groups/contact-groups.py list
-python3 extensions/fastmail-contact-groups/contact-groups.py get --group "Exact group name" --email sender@example.com
-
-# Preview only. Add --apply only after explicit approval:
-python3 extensions/fastmail-contact-groups/contact-groups.py add --group "Exact group name" --email sender@example.com
-```
+The Pi tool and CardDAV service are implemented directly in TypeScript. Node's built-in `fetch` handles HTTPS, `@xmldom/xmldom` parses namespace-aware CardDAV XML, and `unicode-case-folding` preserves Unicode-aware exact matching. No subprocess or Python runtime is required.
 
 ## Tests
 
 From the repository root:
 
 ```bash
-node --test tests/fastmail-contact-groups.test.mjs
-python3 -m unittest discover -s extensions/fastmail-contact-groups/tests -p '*_test.py'
+npm test
 ```
 
-All tests use mocked subprocesses or CardDAV transports and require no credentials. They do not establish permission to mutate a live address book.
+All tests use mocked CardDAV transports or `fetch` implementations and require no credentials. They do not establish permission to mutate a live address book.

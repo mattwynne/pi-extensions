@@ -1,0 +1,9 @@
+{
+  "name": "pi-fastmail-contact-groups",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@xmldom/xmldom": "0.9.12",
+    "unicode-case-folding": "1.1.1"
+  }
+}

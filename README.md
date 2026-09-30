@@ -31,12 +31,15 @@ ln -s "$PI_EXTENSIONS_DIR/extensions/session-title" \
 ln -s "$PI_EXTENSIONS_DIR/extensions/question.ts" \
   "$PI_GLOBAL_EXTENSIONS_DIR/question.ts"
 
-# google-calendar and google-drive need their own npm deps installed in the real directory:
+# google-calendar and google-drive need their npm deps installed in the real directory:
 for ext in google-calendar google-drive; do
   (cd "$PI_EXTENSIONS_DIR/extensions/$ext" && npm install)
   ln -s "$PI_EXTENSIONS_DIR/extensions/$ext" \
     "$PI_GLOBAL_EXTENSIONS_DIR/$ext"
 done
+
+# fastmail-contact-groups is project-scoped, but also has npm dependencies:
+(cd "$PI_EXTENSIONS_DIR/extensions/fastmail-contact-groups" && npm install)
 ```
 
 These examples use POSIX symbolic links. Keep the checkout in place while the
@@ -100,10 +103,9 @@ Expected provider IDs: `openai-codex`, `openrouter`, `pi-claude-code-provider`.
 
 ## Tests
 
-Requires Node.js 24 or newer and Python 3. The release check installs the
-Calendar package from its lockfile, runs every Node and Fastmail contact-group
-Python test, validates each extension source file, and audits the Calendar
-dependencies:
+Requires Node.js 24 or newer. The release check installs extension packages
+from their lockfiles, runs every Node test, validates each extension source
+file, and audits extension dependencies:
 
 ```sh
 npm run check

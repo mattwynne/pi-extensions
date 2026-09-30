@@ -29,6 +29,7 @@ jobs:
           cache-dependency-path: |
             package-lock.json
             extensions/google-calendar/package-lock.json
+            extensions/fastmail-contact-groups/package-lock.json
 
       - name: Run release check
         run: npm run check

@@ -5,9 +5,10 @@ import { join } from "node:path";
 import test from "node:test";
 import { pathToFileURL } from "node:url";
 
+import { ContactGroupsError } from "../extensions/fastmail-contact-groups/contact-groups.ts";
 import { createFastmailContactGroupsExtension } from "../extensions/fastmail-contact-groups/extension.ts";
 
-function setup({ response, truncateHead } = {}) {
+function setup({ response, error, truncateHead } = {}) {
 	const tools = [];
 	const calls = [];
 	const Type = {
@@ -21,14 +22,15 @@ function setup({ response, truncateHead } = {}) {
 		StringEnum: values => values,
 		truncateHead: truncateHead ?? (content => ({ content, truncated: false })),
 		limits: { maxBytes: 50_000, maxLines: 2_000 },
+		createService: signal => ({
+			execute: async params => {
+				calls.push({ params, signal });
+				if (error) throw error;
+				return response ?? { summary: "Preview", applied: false };
+			},
+		}),
 	});
-	register({
-		registerTool: tool => tools.push(tool),
-		exec: async (...args) => {
-			calls.push(args);
-			return response ?? { code: 0, stdout: JSON.stringify({ summary: "Preview", applied: false }) };
-		},
-	});
+	register({ registerTool: tool => tools.push(tool) });
 	return { tool: tools[0], tools, calls };
 }
 
@@ -100,30 +102,29 @@ test("guidance separates official MCP contacts from guarded CardDAV groups", () 
 	assert(tool.promptGuidelines.some(guideline => guideline.includes("account identity") && guideline.includes("synchronization")));
 });
 
-test("default mutation request is preview-only with safe argv, cancellation, and timeout", async () => {
+test("default mutation request is preview-only and preserves cancellation", async () => {
 	const { tool, calls } = setup();
 	const controller = new AbortController();
-	await tool.execute("id", { action: "add", group: "Paperwork; echo bad", email: "x@example.com" }, controller.signal);
-	assert.equal(calls[0][0], "python3");
-	assert.match(calls[0][1][0], /contact-groups\.py$/);
-	assert.deepEqual(calls[0][1].slice(1), ["add", "--group", "Paperwork; echo bad", "--email", "x@example.com"]);
-	assert.deepEqual(calls[0][2], { signal: controller.signal, timeout: 120_000 });
+	const params = { action: "add", group: "Paperwork; echo bad", email: "x@example.com" };
+	await tool.execute("id", params, controller.signal);
+	assert.deepEqual(calls, [{ params, signal: controller.signal }]);
+	assert.equal(calls[0].params.apply, undefined);
 });
 
 test("only literal apply=true requests a write", async () => {
 	const first = setup();
 	await first.tool.execute("id", { action: "remove", group: "g", contactUid: "u" }, undefined);
-	assert.equal(first.calls[0][1].includes("--apply"), false);
+	assert.equal(first.calls[0].params.apply, undefined);
 
 	const second = setup();
 	await second.tool.execute("id", { action: "remove", group: "g", contactUid: "u", apply: true }, undefined);
-	assert.deepEqual(second.calls[0][1].slice(1), ["remove", "--group", "g", "--contact-uid", "u", "--apply"]);
+	assert.equal(second.calls[0].params.apply, true);
 });
 
 test("returns structured helper details and warns when model output is truncated", async () => {
 	const result = { summary: "Preview", applied: false, groups: [{ name: "Paperwork" }] };
 	const { tool } = setup({
-		response: { code: 0, stdout: JSON.stringify(result) },
+		response: result,
 		truncateHead: content => ({ content: content.slice(0, 12), truncated: true }),
 	});
 	const output = await tool.execute("id", { action: "list" }, undefined);
@@ -131,20 +132,27 @@ test("returns structured helper details and warns when model output is truncated
 	assert.match(output.content[0].text, /Output truncated; query one group\/contact for details/);
 });
 
-test("surfaces sanitized helper errors without echoing stderr", async () => {
-	const { tool } = setup({ response: { code: 1, stdout: JSON.stringify({ error: "CardDAV conflict (412)" }), stderr: "private server detail" } });
-	await assert.rejects(tool.execute("id", { action: "list" }, undefined), error => {
-		assert.match(error.message, /CardDAV conflict/);
-		assert.doesNotMatch(error.message, /private server detail/);
+test("surfaces sanitized CardDAV errors", async () => {
+	const { tool } = setup({ error: new ContactGroupsError("CardDAV conflict (412)") });
+	await assert.rejects(tool.execute("id", { action: "list" }, undefined), /CardDAV conflict/);
+});
+
+test("caller cancellation remains an AbortError", async () => {
+	const controller = new AbortController();
+	const { tool } = setup({ error: new Error("SECRET implementation detail") });
+	controller.abort();
+	await assert.rejects(tool.execute("id", { action: "list" }, controller.signal), error => {
+		assert.equal(error.name, "AbortError");
+		assert.doesNotMatch(error.message, /SECRET/);
 		return true;
 	});
 });
 
-test("malformed subprocess output is never echoed", async () => {
-	const { tool } = setup({ response: { code: 1, stdout: "SECRET", stderr: "SECRET" } });
+test("unexpected implementation errors are never echoed", async () => {
+	const { tool } = setup({ error: new Error("SECRET private server detail") });
 	await assert.rejects(tool.execute("id", { action: "list" }, undefined), error => {
-		assert.doesNotMatch(error.message, /SECRET/);
-		assert.match(error.message, /re-read group state/);
+		assert.doesNotMatch(error.message, /SECRET|private server detail/);
+		assert.match(error.message, /no automatic retry/);
 		return true;
 	});
 });

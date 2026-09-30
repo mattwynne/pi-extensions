@@ -10,11 +10,11 @@
   },
   "scripts": {
     "prepublishOnly": "node -e \"throw new Error('This package is not published to npm')\"",
-    "pretest": "npm ci --prefix extensions/google-calendar --ignore-scripts --no-audit",
-    "test": "node --test && npm run test:python:fastmail-contact-groups",
-    "test:python:fastmail-contact-groups": "python3 -m unittest discover -s extensions/fastmail-contact-groups/tests -p '*_test.py'",
+    "pretest": "npm ci --prefix extensions/google-calendar --ignore-scripts --no-audit && npm ci --prefix extensions/fastmail-contact-groups --ignore-scripts --no-audit",
+    "test": "node --test",
     "check:extensions": "node scripts/check-extension-syntax.mjs",
     "check:calendar": "npm audit --prefix extensions/google-calendar --audit-level=high",
-    "check": "npm test && npm run check:extensions && npm run check:calendar"
+    "check:fastmail-contact-groups": "npm audit --prefix extensions/fastmail-contact-groups --audit-level=high",
+    "check": "npm test && npm run check:extensions && npm run check:calendar && npm run check:fastmail-contact-groups"
   }
 }

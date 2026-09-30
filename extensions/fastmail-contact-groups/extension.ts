@@ -1,4 +1,4 @@
-import { fileURLToPath } from "node:url";
+import { ContactGroupsError, createConfiguredService, type ContactGroupParams, type GroupService } from "./contact-groups.ts";
 
 export interface FastmailContactGroupsDependencies {
 	Type: any;
@@ -8,11 +8,16 @@ export interface FastmailContactGroupsDependencies {
 		truncated: boolean;
 	};
 	limits: { maxBytes: number; maxLines: number };
+	createService?: (signal?: AbortSignal) => Pick<GroupService, "execute">;
 }
 
-export function createFastmailContactGroupsExtension({ Type, StringEnum, truncateHead, limits }: FastmailContactGroupsDependencies) {
-	const script = fileURLToPath(new URL("./contact-groups.py", import.meta.url));
-
+export function createFastmailContactGroupsExtension({
+	Type,
+	StringEnum,
+	truncateHead,
+	limits,
+	createService = createConfiguredService,
+}: FastmailContactGroupsDependencies) {
 	return function registerFastmailContactGroups(pi: any) {
 		pi.registerTool({
 			name: "fastmail_contact_groups",
@@ -33,24 +38,17 @@ export function createFastmailContactGroupsExtension({ Type, StringEnum, truncat
 				contactUid: Type.Optional(Type.String({ description: "CardDAV vCard UID, not a Fastmail MCP contact ID. Can disambiguate an email shared by multiple contacts." })),
 				apply: Type.Optional(Type.Boolean({ description: "Default false: preview only. True applies an explicitly approved add/remove and verifies it." })),
 			}),
-			async execute(_id: string, params: any, signal: AbortSignal) {
-				const args = [script, params.action];
-				if (params.group !== undefined) args.push("--group", params.group);
-				if (params.email !== undefined) args.push("--email", params.email);
-				if (params.contactUid !== undefined) args.push("--contact-uid", params.contactUid);
-				if (params.apply === true) args.push("--apply");
-
-				const response = await pi.exec("python3", args, { signal, timeout: 120_000 });
-				let result;
+			async execute(_id: string, params: ContactGroupParams, signal?: AbortSignal) {
+				let result: Record<string, any>;
 				try {
-					result = JSON.parse(response.stdout);
-				} catch {
-					throw new Error("Contact-group helper did not return a valid result. If applying a change, re-read group state before retrying.");
+					result = await createService(signal).execute(params);
+				} catch (error) {
+					if (error instanceof ContactGroupsError) throw new Error(error.message);
+					if (signal?.aborted) {
+						throw signal.reason instanceof Error ? signal.reason : new DOMException("Operation aborted", "AbortError");
+					}
+					throw new Error("Unexpected contact-group error; no automatic retry. Re-read live state before retrying a write.");
 				}
-				if (response.code !== 0 || result.error) {
-					throw new Error(result.error || "Contact-group helper failed; inspect current state before retrying.");
-				}
-
 				const truncated = truncateHead(`${result.summary}\n${JSON.stringify(result, null, 2)}`, limits);
 				let text = truncated.content;
 				if (truncated.truncated) text += "\n[Output truncated; query one group/contact for details.]";
