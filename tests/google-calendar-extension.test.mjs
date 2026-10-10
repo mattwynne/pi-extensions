@@ -52,6 +52,14 @@ class FakeStore {
     this.tokens.set(subjectHash, { ...tokens, identity });
     return { ...account };
   }
+  async reauthenticateAccount(subjectHash, identity, tokens) {
+    if (googleSubjectHash(identity.subject) !== subjectHash) throw new Error("Authorization returned a different Google account. No changes were made.");
+    const account = this.accounts.find(candidate => candidate.subjectHash === subjectHash);
+    if (!account) throw new Error("This Google Calendar account is no longer connected.");
+    this.tokens.set(subjectHash, { ...tokens, identity });
+    account.email = identity.email;
+    return { ...account };
+  }
   async removeAccount(email) {
     const index = this.accounts.findIndex(account => account.email.toLowerCase() === email.toLowerCase());
     if (index < 0) return false;
@@ -142,11 +150,13 @@ function setup({ accounts = [], calendarBehavior = {}, hasClient = true, authori
 
 function uiFixture({ selections = [], inputs = [], confirms = [] } = {}) {
   const notifications = [];
+  const dialogs = [];
   return {
+    dialogs,
     ctx: {
       hasUI: true,
       ui: {
-        select: async () => selections.shift(),
+        select: async (title, options) => { dialogs.push({ title, options }); return selections.shift(); },
         input: async () => inputs.shift(),
         confirm: async () => confirms.shift(),
         notify: (message, level) => notifications.push({ message, level }),
@@ -197,6 +207,7 @@ test("browser OAuth validates state, PKCE, and the loopback callback", async () 
     keys: { client_id: "id", client_secret: "secret" },
     ctx,
     googleApi,
+    loginHint: "person@example.com",
     identityForClient: async () => ({ subject: "subject", email: "person@example.com" }),
     launchBrowser: async authUrl => {
       const authorization = new URL(authUrl);
@@ -210,6 +221,9 @@ test("browser OAuth validates state, PKCE, and the loopback callback", async () 
     timeoutMs: 1_000,
   });
   assert.equal(result.identity.email, "person@example.com");
+  assert.equal(authorizationRequest.searchParams.get("login_hint"), "person@example.com");
+  assert.equal(authorizationRequest.searchParams.get("prompt"), "consent");
+  assert.equal(authorizationRequest.searchParams.get("access_type"), "offline");
   assert.match(tokenRequests[0].redirect_uri, /^http:\/\/127\.0\.0\.1:\d+\/oauth2callback$/);
   assert.ok(tokenRequests[0].codeVerifier);
   assert.equal(authorizationRequest.searchParams.get("code_challenge_method"), "S256");
@@ -393,6 +407,72 @@ test("adding an existing Google subject does not replace its credential", async 
   assert.deepEqual(store.tokens.get(googleSubjectHash("same-subject")), originalToken);
   assert.equal(store.accounts[0].email, "person@example.com");
   assert.ok(notifications.some(entry => /already connected/.test(entry.message) && entry.level === "warning"));
+});
+
+test("settings re-authenticate an expired account in place and refresh its status", async () => {
+  const identity = { subject: "stable", email: "person@example.com" };
+  let authorizationOptions;
+  const { store, commands } = setup({
+    accounts: [identity, { subject: "other", email: "other@example.com" }],
+    identityForClient: async client => {
+      if (client.credentials.refresh_token === "stable-refresh") throw new Error("invalid_grant");
+      return client.credentials.identity;
+    },
+    authorize: async options => {
+      authorizationOptions = options;
+      return { identity, tokens: { refresh_token: "replacement" } };
+    },
+  });
+  const { ctx, notifications, dialogs } = uiFixture({
+    selections: ["person@example.com — Re-authentication required", "Re-authenticate account", "Close"],
+  });
+  await commands.get("google-calendar").handler("", ctx);
+  assert.ok(dialogs[1].options.includes("Re-authenticate account"));
+  assert.ok(dialogs[2].options.includes("person@example.com — Connected"));
+  assert.equal(authorizationOptions.loginHint, "person@example.com");
+  assert.equal(store.accounts.length, 2);
+  assert.equal(store.tokens.get(googleSubjectHash("stable")).refresh_token, "replacement");
+  assert.equal(store.tokens.get(googleSubjectHash("other")).refresh_token, "other-refresh");
+  assert.deepEqual(store.removed, []);
+  assert.ok(notifications.some(entry => entry.message === "Re-authenticated person@example.com." && entry.level === "success"));
+});
+
+test("re-authentication is available for a connected account and accepts an email change for the same subject", async () => {
+  const { store, commands } = setup({
+    accounts: [{ subject: "stable", email: "old@example.com" }],
+    authorize: async () => ({ identity: { subject: "stable", email: "new@example.com" }, tokens: { refresh_token: "replacement" } }),
+  });
+  const { ctx, dialogs } = uiFixture({ selections: ["old@example.com — Connected", "Re-authenticate account", "Close"] });
+  await commands.get("google-calendar").handler("", ctx);
+  assert.deepEqual(store.accounts, [{ subjectHash: googleSubjectHash("stable"), email: "new@example.com" }]);
+  assert.ok(dialogs[2].options.includes("new@example.com — Connected"));
+});
+
+for (const failure of ["different account", "cancelled", "timed out"]) {
+  test(`failed re-authentication (${failure}) leaves the credential intact and keeps settings open`, async () => {
+    const existing = { subject: "stable", email: "person@example.com" };
+    const { store, commands } = setup({ accounts: [existing], authorize: async () => {
+      if (failure !== "different account") throw new Error(`Google authorization ${failure}.`);
+      return { identity: { ...existing, subject: "different" }, tokens: { refresh_token: "replacement" } };
+    } });
+    const originalToken = await store.readToken(googleSubjectHash("stable"));
+    const { ctx, notifications, dialogs } = uiFixture({ selections: ["person@example.com — Connected", "Re-authenticate account", "Close"] });
+    await commands.get("google-calendar").handler("", ctx);
+    assert.deepEqual(await store.readToken(googleSubjectHash("stable")), originalToken);
+    assert.deepEqual(store.accounts, [{ subjectHash: googleSubjectHash("stable"), email: existing.email }]);
+    assert.deepEqual(store.removed, []);
+    assert.equal(dialogs.length, 3);
+    assert.ok(notifications.some(entry => entry.level === "error"));
+    assert.ok(!notifications.some(entry => entry.level === "success"));
+  });
+}
+
+test("backing out of the account menu does not start re-authentication", async () => {
+  let authorized = false;
+  const { commands } = setup({ accounts: [{ subject: "stable", email: "person@example.com" }], authorize: async () => { authorized = true; } });
+  const { ctx } = uiFixture({ selections: ["person@example.com — Connected", "Back", "Close"] });
+  await commands.get("google-calendar").handler("", ctx);
+  assert.equal(authorized, false);
 });
 
 test("remove asks for confirmation and deletes only the selected local account", async () => {

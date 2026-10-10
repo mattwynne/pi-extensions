@@ -42,7 +42,7 @@ The extension requests these exact scopes:
 The imported client configuration is copied to the private storage location
 described below; the extension does not read it from the checkout after import.
 
-Adding an already-connected Google identity is rejected. To replace or re-authenticate an account, remove it locally and add it again.
+Adding an already-connected Google identity is rejected. To renew its credentials, select the existing account and choose **Re-authenticate account**.
 
 ## Settings
 
@@ -52,7 +52,15 @@ Run:
 /google-calendar
 ```
 
-The settings dialog lists each account as either `Connected` or `Re-authentication required`. From there you can add an account or remove a selected account. Removing an account deletes only its local token; it does not revoke the app grant at Google.
+The settings dialog lists each account as either `Connected` or `Re-authentication required`. From there you can add an account, or select an existing account to re-authenticate or remove it. Removing an account deletes only its local token; it does not revoke the app grant at Google.
+
+To reconnect an account:
+
+1. Select the account in `/google-calendar`.
+2. Choose **Re-authenticate account**.
+3. Complete Google's browser authorization flow using the same Google account.
+
+Re-authentication replaces the selected account's local credentials without removing it or changing other accounts. Google must return the same stable account identity, even if its email address has changed. Cancelling, timing out, or choosing a different Google account leaves the saved credentials unchanged. You can also re-authenticate an account that still shows `Connected`.
 
 Interactive Pi provides the dialogs directly. RPC clients can relay the standard Pi dialogs. JSON and print modes cannot change settings; use interactive Pi for setup and account management.
 

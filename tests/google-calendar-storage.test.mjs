@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, stat, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, stat, unlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -84,6 +84,54 @@ test("stores accounts by stable subject hash and rejects duplicate identities", 
     DuplicateAccountError,
   );
   assert.equal((await store.readToken(account.subjectHash)).refresh_token, "token-one");
+});
+
+test("re-authentication replaces only the selected credential and updates its display email", async () => {
+  const { store } = await fixture();
+  const first = await store.addAccount({ subject: "stable", email: "old@example.com" }, { refresh_token: "old-refresh", access_token: "old-access", expiry_date: 1 });
+  const other = await store.addAccount({ subject: "other", email: "other@example.com" }, { refresh_token: "other-refresh" });
+  const replacement = { refresh_token: "new-refresh", access_token: "new-access" };
+  const result = await store.reauthenticateAccount(first.subjectHash, { subject: "stable", email: "new@example.com" }, replacement);
+  assert.deepEqual(result, { ...first, email: "new@example.com" });
+  assert.deepEqual(await store.loadAccounts(), [result, other]);
+  assert.deepEqual(await store.readToken(first.subjectHash), replacement);
+  assert.deepEqual(await store.readToken(other.subjectHash), { refresh_token: "other-refresh" });
+  assert.equal((await stat(store.tokenPath(first.subjectHash))).mode & 0o777, 0o600);
+  assert.equal(await store.mergeToken(first.subjectHash, { access_token: "late-access" }, "old-refresh"), false);
+  assert.deepEqual(await store.readToken(first.subjectHash), replacement);
+});
+
+test("re-authentication rejects a different Google subject even when the email matches", async () => {
+  const { store } = await fixture();
+  const identity = { subject: "stable", email: "person@example.com" };
+  const account = await store.addAccount(identity, { refresh_token: "original" });
+  await assert.rejects(store.reauthenticateAccount(account.subjectHash, { ...identity, subject: "different" }, { refresh_token: "replacement" }), /different Google account/);
+  await assert.rejects(store.reauthenticateAccount(account.subjectHash, identity, { access_token: "no-refresh" }), /refresh token/);
+  assert.deepEqual(await store.loadAccounts(), [account]);
+  assert.deepEqual(await store.readToken(account.subjectHash), { refresh_token: "original" });
+});
+
+test("re-authentication repairs missing or invalid tokens without requiring the old credential", async () => {
+  const { store } = await fixture();
+  const identity = { subject: "stable", email: "person@example.com" };
+  const account = await store.addAccount(identity, { refresh_token: "original" });
+  await unlink(store.tokenPath(account.subjectHash));
+  await store.reauthenticateAccount(account.subjectHash, identity, { refresh_token: "repaired" });
+  assert.deepEqual(await store.readToken(account.subjectHash), { refresh_token: "repaired" });
+  await writeFile(store.tokenPath(account.subjectHash), "{", "utf8");
+  await store.reauthenticateAccount(account.subjectHash, identity, { refresh_token: "repaired-again" });
+  assert.deepEqual(await store.readToken(account.subjectHash), { refresh_token: "repaired-again" });
+  assert.deepEqual(await store.loadAccounts(), [account]);
+});
+
+test("re-authentication cannot recreate an account removed during browser authorization", async () => {
+  const { store } = await fixture();
+  const identity = { subject: "stable", email: "person@example.com" };
+  const account = await store.addAccount(identity, { refresh_token: "original" });
+  await store.removeAccount(identity.email);
+  await assert.rejects(store.reauthenticateAccount(account.subjectHash, identity, { refresh_token: "replacement" }), /no longer connected/);
+  assert.deepEqual(await store.loadAccounts(), []);
+  await assert.rejects(store.readToken(account.subjectHash), /credential is missing/);
 });
 
 test("a late refresh cannot recreate a removed token or overwrite a re-added credential", async () => {

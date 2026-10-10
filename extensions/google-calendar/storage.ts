@@ -16,7 +16,7 @@ const sleep = (milliseconds) => new Promise(resolvePromise => setTimeout(resolve
 
 export class DuplicateAccountError extends Error {
   constructor(email) {
-    super(`Google Calendar account "${email}" is already connected. Remove it before adding it again.`);
+    super(`Google Calendar account "${email}" is already connected. Select it in /google-calendar and choose Re-authenticate account instead.`);
     this.name = "DuplicateAccountError";
   }
 }
@@ -252,6 +252,46 @@ export class CalendarStore {
     });
   }
 
+  async reauthenticateAccount(subjectHash, identity, tokens) {
+    if (!identity?.email || !identity.email.includes("@") || !identity?.subject) {
+      throw new Error("Google authorization did not return a verified email and subject.");
+    }
+    if (googleSubjectHash(identity.subject) !== subjectHash) {
+      throw new Error("Authorization returned a different Google account. No changes were made. Try again with the selected account.");
+    }
+    if (typeof tokens?.refresh_token !== "string" || !tokens.refresh_token.trim()) {
+      throw new Error("Google did not return a refresh token. No changes were made.");
+    }
+    // Match add/remove lock ordering so removal cannot race with replacement.
+    return withFileLock(this.accountsPath, async () => {
+      const accounts = await this.loadAccounts();
+      const index = accounts.findIndex(account => account.subjectHash === subjectHash);
+      if (index < 0) throw new Error("This Google Calendar account is no longer connected. No changes were made.");
+      const account = { ...accounts[index], email: identity.email };
+      const emailChanged = accounts[index].email !== identity.email;
+      const tokenPath = this.tokenPath(subjectHash);
+      await withFileLock(tokenPath, async () => {
+        // Preserve even a malformed old token for rollback if the email update fails.
+        const previousToken = emailChanged ? await readFile(tokenPath, "utf8").catch(error => {
+          if (error?.code === "ENOENT") return undefined;
+          throw error;
+        }) : undefined;
+        await atomicWrite(tokenPath, `${JSON.stringify(tokens, null, 2)}\n`);
+        if (emailChanged) {
+          accounts[index] = account;
+          try {
+            await atomicWrite(this.accountsPath, `${JSON.stringify({ version: REGISTRY_VERSION, accounts }, null, 2)}\n`);
+          } catch (error) {
+            if (previousToken === undefined) await rm(tokenPath, { force: true });
+            else await atomicWrite(tokenPath, previousToken);
+            throw error;
+          }
+        }
+      });
+      return account;
+    });
+  }
+
   async updateAccountEmail(subjectHash, email) {
     await withFileLock(this.accountsPath, async () => {
       const accounts = await this.loadAccounts();
@@ -266,8 +306,8 @@ export class CalendarStore {
     try {
       return JSON.parse(await readFile(this.tokenPath(subjectHash), "utf8"));
     } catch (error) {
-      if (error?.code === "ENOENT") throw new Error("Saved Google Calendar credential is missing. Remove and re-add this account with /google-calendar.");
-      if (error instanceof SyntaxError) throw new Error("Saved Google Calendar credential is invalid. Remove and re-add this account with /google-calendar.");
+      if (error?.code === "ENOENT") throw new Error("Saved Google Calendar credential is missing. Re-authenticate this account with /google-calendar.");
+      if (error instanceof SyntaxError) throw new Error("Saved Google Calendar credential is invalid. Re-authenticate this account with /google-calendar.");
       throw error;
     }
   }

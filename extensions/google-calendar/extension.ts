@@ -187,6 +187,7 @@ export async function authorizeInBrowser({
   identityForClient = defaultIdentityForClient,
   launchBrowser = defaultBrowserLauncher,
   timeoutMs = OAUTH_TIMEOUT_MS,
+  loginHint,
 }) {
   return new Promise((resolve, reject) => {
     let client;
@@ -269,6 +270,7 @@ export async function authorizeInBrowser({
         const authUrl = client.generateAuthUrl({
           access_type: "offline",
           prompt: "consent",
+          ...(loginHint ? { login_hint: loginHint } : {}),
           scope: GOOGLE_CALENDAR_SCOPES,
           redirect_uri: redirectUri,
           state,
@@ -295,7 +297,7 @@ export async function authorizeInBrowser({
       if (settled) return;
       settled = true;
       server.close();
-      reject(new Error("Google authorization timed out. No account was added."));
+      reject(new Error("Google authorization timed out. No saved credentials were changed."));
     }, timeoutMs);
   });
 }
@@ -329,7 +331,7 @@ export function createGoogleCalendarExtension({
     });
     const identity = await identityForClient(client, googleApi, token);
     if (googleSubjectHash(identity.subject) !== savedAccount.subjectHash) {
-      throw new Error("Saved Google credential belongs to a different identity. Remove and re-add this account.");
+      throw new Error("Saved Google credential belongs to a different identity. Re-authenticate this account with /google-calendar.");
     }
     if (identity.email !== savedAccount.email) await store.updateAccountEmail(savedAccount.subjectHash, identity.email);
     return { client, account: { subjectHash: savedAccount.subjectHash, email: identity.email } };
@@ -394,6 +396,16 @@ export function createGoogleCalendarExtension({
     return true;
   }
 
+  async function reauthenticateAccount(ctx, email) {
+    requireUI(ctx);
+    const savedAccount = await store.findAccountByEmail(email);
+    const keys = await store.readOAuthClient();
+    const result = await authorize({ keys, ctx, googleApi, identityForClient, launchBrowser, loginHint: savedAccount.email });
+    const account = await store.reauthenticateAccount(savedAccount.subjectHash, result.identity, result.tokens);
+    ctx.ui.notify(`Re-authenticated ${account.email}.`, "success");
+    return true;
+  }
+
   async function removeAccount(ctx, email) {
     const confirmed = await ctx.ui.confirm(`Remove ${email}?`, "This deletes only the local Calendar credential. It does not revoke access at Google.");
     if (!confirmed) return false;
@@ -417,13 +429,14 @@ export function createGoogleCalendarExtension({
       const choice = await ctx.ui.select(title, [...rows, ...actions]);
       if (!choice || choice === "Close") return;
       const rowIndex = rows.indexOf(choice);
-      if (rowIndex >= 0) {
-        const email = statuses[rowIndex].email;
-        const accountAction = await ctx.ui.select(`${email} — ${statuses[rowIndex].status}`, ["Remove account", "Back"]);
-        if (accountAction === "Remove account") await removeAccount(ctx, email);
-        continue;
-      }
       try {
+        if (rowIndex >= 0) {
+          const email = statuses[rowIndex].email;
+          const accountAction = await ctx.ui.select(`${email} — ${statuses[rowIndex].status}`, ["Re-authenticate account", "Remove account", "Back"]);
+          if (accountAction === "Re-authenticate account") await reauthenticateAccount(ctx, email);
+          else if (accountAction === "Remove account") await removeAccount(ctx, email);
+          continue;
+        }
         if (choice === "Add account") await addAccount(ctx);
         else if (choice === "Import OAuth client" || choice === "Replace OAuth client") await importOAuthClient(ctx);
       } catch (error) {
