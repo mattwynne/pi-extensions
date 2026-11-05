@@ -33,11 +33,13 @@ that replaces the editor.
 
 ### Latest prompt
 
-- Keep your latest prompt above the input box while Pi works and after it replies.
-- Show up to three lines, wrapping to fit the terminal.
-- Read the full prompt with `/last-prompt`. The viewer uses Pi's editor;
-  closing it discards any edits and sends nothing to the agent.
+- Keep a one-line preview of your latest prompt in a box above the input.
+- Hide or show the box with **Ctrl+Alt+P** or `/last-prompt`.
+- Keep the box hidden as new prompts arrive; showing it reveals the latest one.
 - Restore the prompt when resuming a session or changing branches.
+
+The preview is read-only. Long prompts are truncated, not wrapped, and there is
+no editable viewer.
 
 Tool output stays unchanged. This uses a widget, so it works alongside the
 session-title editor. Available only in Pi's terminal interface.

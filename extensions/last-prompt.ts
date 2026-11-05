@@ -1,9 +1,8 @@
 import type { UserMessage } from "@earendil-works/pi-ai";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { stripTerminalSequences, truncateToWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
+import { Key, stripTerminalSequences, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 
 const WIDGET_KEY = "last-prompt";
-const PREVIEW_LINES = 3;
 
 function promptText(content: UserMessage["content"]): string {
 	if (typeof content === "string") return content || "[Empty prompt]";
@@ -12,36 +11,37 @@ function promptText(content: UserMessage["content"]): string {
 
 export default function lastPromptExtension(pi: ExtensionAPI) {
 	let lastPrompt: string | undefined;
+	let visible = true;
 
 	function updateWidget(ctx: ExtensionContext) {
 		if (ctx.mode !== "tui") return;
-		if (lastPrompt === undefined) {
+		if (!visible || lastPrompt === undefined) {
 			ctx.ui.setWidget(WIDGET_KEY, undefined);
 			return;
 		}
 
-		// Keep terminal control sequences out of the display; retain the original for the viewer.
-		const preview = stripTerminalSequences(lastPrompt).replace(/\t/g, "    ").replace(/\r/g, "");
+		const preview = stripTerminalSequences(lastPrompt).replace(/\s+/g, " ").trim() || "[Empty prompt]";
 		ctx.ui.setWidget(WIDGET_KEY, () => {
 			let cachedWidth = -1;
-			let visible: string[] = [];
+			let title = "";
+			let text = "";
+			let padding = "";
 			return {
 				render(width: number) {
 					if (width <= 0) return [];
 					const theme = ctx.ui.theme;
-					// Spinner redraws should not rewrap a potentially long prompt.
+					if (width < 5) return [theme.fg("text", truncateToWidth(preview, width))];
+					// Spinner redraws should not repeatedly truncate a potentially long prompt.
 					if (width !== cachedWidth) {
-						const lines = wrapTextWithAnsi(preview, width);
-						visible = lines.slice(0, PREVIEW_LINES);
-						if (lines.length > PREVIEW_LINES) {
-							visible[PREVIEW_LINES - 1] = truncateToWidth(visible[PREVIEW_LINES - 1], width - 1, "") + "…";
-						}
+						title = truncateToWidth(" Latest prompt · Ctrl+Alt+P ", width - 2, "");
+						text = truncateToWidth(preview, width - 4);
+						padding = " ".repeat(width - 4 - visibleWidth(text));
 						cachedWidth = width;
 					}
 					return [
-						theme.fg("muted", truncateToWidth("Latest prompt · /last-prompt for full text", width)),
-						// A wide grapheme may exceed a one-column wrap width; clip it before rendering.
-						...visible.map((line) => theme.fg("text", truncateToWidth(line, width))),
+						theme.fg("muted", "┌" + title + "─".repeat(width - 2 - visibleWidth(title)) + "┐"),
+						theme.fg("muted", "│ ") + theme.fg("text", text) + padding + theme.fg("muted", " │"),
+						theme.fg("muted", "└" + "─".repeat(width - 2) + "┘"),
 					];
 				},
 				invalidate() { cachedWidth = -1; },
@@ -63,6 +63,16 @@ export default function lastPromptExtension(pi: ExtensionAPI) {
 		updateWidget(ctx);
 	}
 
+	function toggle(ctx: ExtensionContext) {
+		if (ctx.mode !== "tui") return;
+		if (lastPrompt === undefined) {
+			ctx.ui.notify("No prompt in this branch yet.", "info");
+			return;
+		}
+		visible = !visible;
+		updateWidget(ctx);
+	}
+
 	pi.on("session_start", (_event, ctx) => restorePrompt(ctx));
 	pi.on("session_tree", (_event, ctx) => restorePrompt(ctx));
 	pi.on("message_start", (event, ctx) => {
@@ -74,19 +84,12 @@ export default function lastPromptExtension(pi: ExtensionAPI) {
 		if (ctx.mode === "tui") ctx.ui.setWidget(WIDGET_KEY, undefined);
 	});
 
+	pi.registerShortcut(Key.ctrlAlt("p"), {
+		description: "Hide or show the latest-prompt box",
+		handler: toggle,
+	});
 	pi.registerCommand("last-prompt", {
-		description: "Read the latest prompt in full (changes in the viewer are discarded)",
-		handler: async (_args, ctx) => {
-			if (ctx.mode !== "tui") {
-				if (ctx.hasUI) ctx.ui.notify("The prompt viewer requires Pi's terminal interface.", "info");
-				return;
-			}
-			if (lastPrompt === undefined) {
-				ctx.ui.notify("No prompt in this branch yet.", "info");
-				return;
-			}
-			// Use Pi's scrollable editor as a viewer. Never submit or save its return value.
-			await ctx.ui.editor("Latest prompt — close to return; edits are discarded", lastPrompt);
-		},
+		description: "Hide or show the latest-prompt box",
+		handler: async (_args, ctx) => toggle(ctx),
 	});
 }
