@@ -31,6 +31,30 @@ name, or recent user and assistant messages for later refinements.
 This replaces Pi's editor component; do not combine it with another extension
 that replaces the editor.
 
+### Latest prompt
+
+- Keep your latest prompt above the input box while Pi works and after it replies.
+- Show up to three lines, wrapping to fit the terminal.
+- Read the full prompt with `/last-prompt`. The viewer uses Pi's editor;
+  closing it discards any edits and sends nothing to the agent.
+- Restore the prompt when resuming a session or changing branches.
+
+Tool output stays unchanged. This uses a widget, so it works alongside the
+session-title editor. Available only in Pi's terminal interface.
+
+Try it from this repository:
+
+```sh
+pi -e ./extensions/last-prompt.ts
+```
+
+To enable it for every session, link it into `~/.pi/agent/extensions/` and run
+`/reload` in existing sessions:
+
+```sh
+ln -s "$PWD/extensions/last-prompt.ts" ~/.pi/agent/extensions/last-prompt.ts
+```
+
 ### Questions
 
 - Let the agent ask a multiple-choice question with explanatory context.
