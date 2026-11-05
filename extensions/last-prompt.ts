@@ -30,7 +30,10 @@ export default function lastPromptExtension(pi: ExtensionAPI) {
 				render(width: number) {
 					if (width <= 0) return [];
 					const theme = ctx.ui.theme;
-					if (width < 5) return [theme.fg("text", truncateToWidth(preview, width))];
+					if (width < 5) {
+						const text = truncateToWidth(preview, width);
+						return [theme.bg("toolPendingBg", theme.fg("text", text) + " ".repeat(width - visibleWidth(text)))];
+					}
 					// Spinner redraws should not repeatedly truncate a potentially long prompt.
 					if (width !== cachedWidth) {
 						title = truncateToWidth(" Latest prompt · Ctrl+Alt+P ", width - 2, "");
@@ -39,9 +42,9 @@ export default function lastPromptExtension(pi: ExtensionAPI) {
 						cachedWidth = width;
 					}
 					return [
-						theme.fg("muted", "─" + title + "─".repeat(width - 2 - visibleWidth(title)) + "┐"),
-						"  " + theme.fg("text", text) + padding + theme.fg("muted", " │"),
-					];
+						theme.fg("muted", "┌" + title + "─".repeat(width - 2 - visibleWidth(title)) + "┐"),
+						theme.fg("muted", "│ ") + theme.fg("text", text) + padding + theme.fg("muted", " │"),
+					].map((line) => theme.bg("toolPendingBg", line));
 				},
 				invalidate() { cachedWidth = -1; },
 			};

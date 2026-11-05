@@ -33,7 +33,8 @@ that replaces the editor.
 
 ### Latest prompt
 
-- Keep a one-line preview of your latest prompt in a box above the input.
+- Keep a one-line preview of your latest prompt above the input, with a shaded
+  background and top and side borders (no bottom border).
 - Hide or show the box with **Ctrl+Alt+P** or `/last-prompt`.
 - Keep the box hidden as new prompts arrive; showing it reveals the latest one.
 - Restore the prompt when resuming a session or changing branches.

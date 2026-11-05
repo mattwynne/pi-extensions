@@ -13,6 +13,7 @@ function setup(mode = "tui") {
 	const shortcuts = new Map();
 	const widgets = [];
 	const notifications = [];
+	const backgrounds = [];
 	let branch = [];
 	let colour = "";
 	let truncations = 0;
@@ -37,14 +38,17 @@ function setup(mode = "tui") {
 		hasUI: mode === "tui" || mode === "rpc",
 		sessionManager: { getBranch: () => branch },
 		ui: {
-			theme: { fg: (_token, text) => colour + text },
+			theme: {
+				fg: (_token, text) => colour + text,
+				bg: (token, text) => { backgrounds.push({ token, text }); return text; },
+			},
 			setWidget: (key, value) => widgets.push({ key, value }),
 			editor: () => assert.fail("The prompt box must never open an editable viewer"),
 			notify: (...args) => notifications.push(args),
 		},
 	};
 	return {
-		widgets, notifications,
+		widgets, notifications, backgrounds,
 		emit: (name, event = {}) => events.get(name)(event, ctx),
 		prompt: (content, role = "user") => events.get("message_start")({ message: { role, content } }, ctx),
 		command: () => commands.get("last-prompt").handler("", ctx),
@@ -58,7 +62,7 @@ function setup(mode = "tui") {
 
 const user = (content) => ({ type: "message", message: { role: "user", content } });
 
-test("pins a one-line prompt with only top and right edges and leaves it visible after the response", () => {
+test("pins a shaded prompt with top and side edges but no bottom border", () => {
 	const fixture = setup();
 	fixture.emit("session_start");
 	assert.equal(fixture.widgets.at(-1).value, undefined);
@@ -66,10 +70,11 @@ test("pins a one-line prompt with only top and right edges and leaves it visible
 	assert.equal(fixture.widgets.at(-1).key, "last-prompt");
 	const lines = fixture.component().render(60);
 	assert.equal(lines.length, 2);
-	assert.match(lines[0], /^─ Latest prompt · Ctrl\+Alt\+P .*┐$/);
-	assert.match(lines[1], /^  Fix the tests +│$/);
-	assert.ok(lines.every((line) => !/[┌└┘]/.test(line)));
+	assert.match(lines[0], /^┌ Latest prompt · Ctrl\+Alt\+P .*┐$/);
+	assert.match(lines[1], /^│ Fix the tests +│$/);
+	assert.ok(lines.every((line) => !/[└┘]/.test(line)));
 	assert.ok(lines.every((line) => line.length === 60));
+	assert.deepEqual(fixture.backgrounds, Array.from(lines, (text) => ({ token: "toolPendingBg", text })));
 	fixture.prompt("Thinking...", "assistant");
 	fixture.prompt("tool output", "toolResult");
 	assert.match(fixture.component().render(60)[1], /Fix the tests/);
@@ -137,13 +142,25 @@ test("truncates instead of wrapping and fits narrow terminals", () => {
 	fixture.prompt("abcdefghijklmnopqrstuvwxyz");
 	const component = fixture.component();
 	assert.match(component.render(80)[1], /abcdefghijklmnopqrstuvwxyz/);
-	assert.equal(component.render(10)[1], "  abcde… │");
+	assert.equal(component.render(10)[1], "│ abcde… │");
 	for (const width of [1, 2, 3, 4, 5, 10, 80]) {
 		const lines = component.render(width);
 		assert.equal(lines.length, width < 5 ? 1 : 2);
 		assert.ok(lines.every((line) => line.length <= width));
 	}
 	assert.deepEqual(Array.from(component.render(0)), []);
+});
+
+test("shading covers the whole row even on narrow terminals", () => {
+	const fixture = setup();
+	fixture.prompt("x");
+	const component = fixture.component();
+	for (const width of [1, 2, 3, 4, 5, 40]) {
+		const lines = component.render(width);
+		assert.ok(lines.every((line) => line.length === width));
+		assert.ok(fixture.backgrounds.slice(-lines.length).every(({ token, text }) =>
+			token === "toolPendingBg" && text.length === width));
+	}
 });
 
 test("caches truncation across redraws and refreshes on resize and theme changes", () => {
@@ -169,7 +186,7 @@ test("flattens multiline prompts and shows image placeholders without their data
 		{ type: "text", text: "Inspect this\nimage" },
 		{ type: "image", data: "private", mimeType: "image/png" },
 	]);
-	assert.match(fixture.component().render(80)[1], /^  Inspect this image \[Image\] +│$/);
+	assert.match(fixture.component().render(80)[1], /^│ Inspect this image \[Image\] +│$/);
 	fixture.prompt([{ type: "image", data: "private" }]);
 	assert.match(fixture.component().render(80)[1], /\[Image\]/);
 	for (const empty of ["", [], " \n\t "]) {
@@ -181,7 +198,7 @@ test("flattens multiline prompts and shows image placeholders without their data
 test("removes terminal sequences and collapses whitespace", () => {
 	const fixture = setup();
 	fixture.prompt("\x1b[31mred\x1b[0m\ttext\r\nnext line");
-	assert.match(fixture.component().render(80)[1], /^  red text next line +│$/);
+	assert.match(fixture.component().render(80)[1], /^│ red text next line +│$/);
 });
 
 test("terminal-only functionality is disabled in RPC, JSON, and print modes", async () => {
