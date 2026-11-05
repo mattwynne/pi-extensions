@@ -39,9 +39,8 @@ export default function lastPromptExtension(pi: ExtensionAPI) {
 						cachedWidth = width;
 					}
 					return [
-						theme.fg("muted", "┌" + title + "─".repeat(width - 2 - visibleWidth(title)) + "┐"),
-						theme.fg("muted", "│ ") + theme.fg("text", text) + padding + theme.fg("muted", " │"),
-						theme.fg("muted", "└" + "─".repeat(width - 2) + "┘"),
+						theme.fg("muted", "─" + title + "─".repeat(width - 2 - visibleWidth(title)) + "┐"),
+						"  " + theme.fg("text", text) + padding + theme.fg("muted", " │"),
 					];
 				},
 				invalidate() { cachedWidth = -1; },
